@@ -62,9 +62,24 @@ def demand_info(tstart,filebase):
 
     return SA1,SA2,tstart,filename1,filename2
 
-def subset_pricefilter():
+def subset_pricefilter(price):
 
-    return 0
+
+    import numpy as np
+    
+    price=price.iloc[1::2]
+    price  = price.dropna()
+
+    p1 = np.percentile(price.dropna(),99)
+    p2 = np.percentile(price.dropna(),100)
+
+    price1 = price[price>p1]
+    price  = price1[price1<p2]
+
+    import datetime as dt
+    price=price.loc[dt.datetime(2016,1,1):dt.datetime(2018,1,1)]
+
+    return price
 
 def subset(df_mnt_prev,df_mnt,Gen_info,state):
     # Subsets output of trading info . E.G Looking at South Australia
@@ -123,25 +138,39 @@ def SA_production_price():
     Gen_info_wind=Gen_info[Gen_info["Fuel Source - Primary"]=="Wind"]
     intersect=list(set(df_all.columns) & set(Gen_info_wind.loc[:,"DUID"]))
     price=df_all.loc[:,"SA"]
+    price=price.dropna()
     df_all=df_all[intersect]
+
+    return df_all,price
+
+def VIC_lilly_production_price():
+    Gen_info=pd.read_excel("/mnt/y/Code/Dev/graph/MacBank/NEM Registration and Exemption List.xls",sheet_name="Generators and Scheduled Loads")
+    # Read Trading prices info
+    df_all=pd.read_csv("/mnt/y/Data/Electricity/Average_prices/df_all_VIC_PUBLIC_DVD_TRADING_PRICE.csv",index_col="SETTLEMENTDATE")
+    df_all=df_all.set_index(pd.DatetimeIndex(df_all.index))
+
+    price=df_all["VIC"]
+    price=price.dropna()
+
+    df_all = pd.read_csv("/mnt/y/Data/Power/ECMWF/lillypond/future_wind.csv",index_col="time")
+    df_all.index=pd.DatetimeIndex(df_all.index)
+    df_all=df_all.drop("Unnamed: 0",axis=1)
+
     return df_all,price
 
 
 def subset_pricefilter(price):
 
     import numpy as np
-   
-    df_all,price=SA_production_price()
-    price=price.dropna()
 
     p1 = np.percentile(np.array(price), 90) # return 50th percentile, e.g median.
     p2 = np.percentile(np.array(price), 95) # return 50th percentile, e.g median.
 
     price=price[price>p1]
     price=price[price<p2]
-    times=list(price.index)
+    times=price.index
 
-    return times
+    return times,price
 
 def gen_dem(filebase):
 
@@ -243,6 +272,67 @@ def rural_lga():
     #combine shires and outer city regions
     rural_lga=np.append(outercity,np.array(shire))
     return rural_lga
+
+def load_vic_price():
+
+    import datetime
+    import networkx as nx
+    import pandas as pd
+    import ancil_graph
+    import ancil_load
+    import math
+
+
+    # Read Trading prices info for historical state
+    df_state=pd.read_csv("/mnt/y/Data/Electricity/Average_prices/df_all_VIC_PUBLIC_DVD_TRADING_PRICE.csv",index_col="SETTLEMENTDATE")
+    df_state=df_state.set_index(pd.DatetimeIndex(df_state.index))
+    # Neccesary to start at 1am rather than 30
+    df_state=df_state.iloc[1::2,:]
+
+    price=df_state.loc[:,"VIC"]
+
+    return price
+
+
+def munge_MST(tstart,tstart2,df_all,price,out):
+
+    # subset on time, calculate the three df's (one is revenue)
+
+    df_delta = df_all.loc[tstart:tstart2]
+    df_revenue=df_delta.mul(price.loc[df_delta.index],axis=0)
+    G=ancil_graph.makeG1(df_delta,df_revenue,price.loc[df_delta.index],out)
+
+    return df_delta,df_revenue,G
+
+def munge_analytics_MST(G,tstart):
+    import networkx as nx
+    import pandas as pd
+    import ancil_graph
+
+    df_central=pd.DataFrame()
+    
+    for g in G.nodes:
+        #print(g)
+        df_ind=pd.DataFrame()
+        Centrality_metric=["Degree_centrality","Eigencentrality","katz","Pagerank","Closeness","Clustering"]
+        #Centrality_metric=["CBN1","CBN2","Degree","Degree_centrality"]#"Betweeness","Eigencentrality","load","katz","Pagerank","Closeness"]
+        for cent in Centrality_metric:
+            df_ind[cent]=pd.Series(nx.get_node_attributes(G,cent)[g])
+        df_ind["node"]=pd.Series(g)
+        df_ind["ValueFactor"]=pd.Series(nx.get_node_attributes(G,"nvaluefactor")[g])
+        df_ind["Generation"]=pd.Series(nx.get_node_attributes(G,"nvalue")[g])
+        df_ind["CBN1"]=pd.Series(nx.get_node_attributes(G,"CBN1")[g])
+        df_ind["CBN2"]=pd.Series(nx.get_node_attributes(G,"CBN2")[g])
+        df_ind["CBN3"]=pd.Series(nx.get_node_attributes(G,"CBN3")[g])
+        df_ind["time"]=tstart
+        #print(df_ind)
+        df_central=df_central.append(df_ind)
+    return df_central
+
+def analytics_MST(df_central):
+
+
+  return 0
 
 def load_Bret_price(Bret_csv):
     # Future Price
@@ -413,11 +503,89 @@ def Cartopy_Earth_temp(tm,var,rrp,basefn):
 
 def Cartopy_Earth_wind(tm,var,rrp,basefn):
 
-    import datetime as dt
-    tm=dt.datetime(2010,1,1,0,1)
-    rrp = "wind"
-    basefn="/mnt/y/Data/Weather/ECMWF/Data_R/ml/{0}/{1:02d}/era5_hourly_ml_AUS_{0}{1:02d}.nc"
+    import matplotlib
+    matplotlib.use('Agg') #https://stackoverflow.com/questions/37604289/tkinter-tclerror-no-display-name-and-no-display-environment-variable
 
+    from netCDF4 import Dataset, MFDataset, num2date
+    import matplotlib.pylab as plt
+    import numpy as np
+    from matplotlib import cm
+    import cartopy.crs as ccrs
+    import pandas as pd
+    import sys
+    import os
+    from cartopy.util import add_cyclic_point
+
+    ## Wind
+
+    year  =  tm.year
+    month =  tm.month
+    day   =  tm.day
+    hour  =  tm.hour
+
+    tind = (day-1)*24+hour
+    basefn=basefn.format(year,month)
+
+    base = "/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme/{0}/{1:02d}/".format(year,month)
+    mkdir_p(base)
+
+    flf = Dataset(basefn)
+    lat = flf.variables['latitude'][:]
+    lon = flf.variables['longitude'][:]
+
+    u = flf.variables["u100"][tind,:,:]
+    v = flf.variables["v100"][tind,:,:]
+    temp=flf.variables["t"][tind,:,:]
+
+
+    crs_latlon=ccrs.PlateCarree()
+    plt.figure(figsize=(13,6.2))
+
+    ax = plt.subplot(111, projection=crs_latlon)
+
+    mm = ax.pcolormesh(lon,\
+                       lat,\
+                       temp,\
+                       vmin=273,\
+                       vmax=310,\
+                       transform=ccrs.PlateCarree(),cmap="RdBu_r" )
+    plt.colorbar(mm)
+    ax.coastlines();
+
+        #ax.quiver(lon,lat,u,v,transform=crs_latlon, headwidth=1, scale =1.0 headlength=4)
+    skip=(slice(None,None,5),slice(None,None,5))
+    ax.quiver(lon[::5],lat[::5],u[skip],v[skip],color="pink",transform=crs_latlon, headwidth=2, headlength=3)
+
+
+
+    ## add Existing points
+    ps=pd.read_csv("/mnt/y/Data/Electricity/Generation Trading load/MajorPowerStations_v2.csv")
+    ps_wind=ps[ps["GENERATIONTYPE"]=="Wind Turbine"]
+
+
+    for i,p in enumerate(ps.index):
+        LAT=ps.iloc[i,:]["LATITUDE"]
+        LON=ps.iloc[i,:]["LONGITUDE"]
+        plt.plot([LON],[LAT],color='red',marker="o",markersize=4)#,transform=crs_latlon)
+
+    for i,p in enumerate(ps_wind.index):
+        LAT=ps_wind.iloc[i,:]["LATITUDE"]
+        LON=ps_wind.iloc[i,:]["LONGITUDE"]
+        plt.plot([LON],[LAT],color='green',marker="o",markersize=4,)#,transform=crs_latlon)
+
+
+    # SA bounary coordinates
+    #ax.set_extent((125, 141, -25, -39), crs=crs_latlon)
+    # Victoria Coordinates
+    #ax.set_extent((140,150,-33,-40), crs=crs_latlon)
+
+
+    plt.savefig(base+"era5_AUS_{1}{2:02d}{3:02d}_{4}_RRP_{5}.png".format(var,year,month,day,hour,rrp))
+    plt.close()
+
+    return 0
+
+def Cartopy_Earth_VIC(tm,var,rrp,basefn):
 
     import matplotlib
     matplotlib.use('Agg') #https://stackoverflow.com/questions/37604289/tkinter-tclerror-no-display-name-and-no-display-environment-variable
@@ -442,8 +610,8 @@ def Cartopy_Earth_wind(tm,var,rrp,basefn):
     tind = (day-1)*24+hour
     basefn=basefn.format(year,month)
 
-    base = "/mnt/y/Data/Weather/ECMWF/TEST/Saved_plots/{1}/{2:02d}/{0}/".format(var,year,month)
-    ancil_load.mkdir_p(base)
+    base = "/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme/{0}/{1:02d}/".format(year,month)
+    mkdir_p(base)
 
     flf = Dataset(basefn)
     lat = flf.variables['latitude'][:]
@@ -451,6 +619,7 @@ def Cartopy_Earth_wind(tm,var,rrp,basefn):
 
     u = flf.variables["u100"][tind,:,:]
     v = flf.variables["v100"][tind,:,:]
+    temp=flf.variables["t"][tind,:,:]
 
 
     crs_latlon=ccrs.PlateCarree()
@@ -468,28 +637,51 @@ def Cartopy_Earth_wind(tm,var,rrp,basefn):
     ax.coastlines();
 
         #ax.quiver(lon,lat,u,v,transform=crs_latlon, headwidth=1, scale =1.0 headlength=4)
-    skip=(slice(None,None,5),slice(None,None,5))
-    ax.quiver(lon[::5],lat[::5],u[skip],v[skip],color="pink",transform=crs_latlon, headwidth=2, headlength=3)
+    skip=(slice(None,None,8),slice(None,None,8))
+    q=ax.quiver(lon[::8],lat[::8],u[skip],v[skip],color="pink",transform=crs_latlon, headwidth=20, headlength=10)
+    ax.quiverkey(q,X=.3,Y=1.1,U=10,label="Length = 10 ms-1",labelpos='E')
 
 
+    # ## add Existing points
+    # ps=pd.read_csv("/mnt/y/Data/Electricity/Generation Trading load/MajorPowerStations_v2.csv")
+    # ps_wind=ps[ps["GENERATIONTYPE"]=="Wind Turbine"]
 
-    ## add point
-    ps=pd.read_csv("/mnt/y/Data/Electricity/Generation Trading load/MajorPowerStations_v2.csv")
-    ps_wind=ps[ps["GENERATIONTYPE"]=="Wind Turbine"]
+
+    # for i,p in enumerate(ps.index):
+    #     LAT=ps.iloc[i,:]["LATITUDE"]
+    #     LON=ps.iloc[i,:]["LONGITUDE"]
+    #     plt.plot([LON],[LAT],color='red',marker="o",markersize=4)#,transform=crs_latlon)
+
+    # for i,p in enumerate(ps_wind.index):
+    #     LAT=ps_wind.iloc[i,:]["LATITUDE"]
+    #     LON=ps_wind.iloc[i,:]["LONGITUDE"]
+    #     plt.plot([LON],[LAT],color='green',marker="o",markersize=4,)#,transform=crs_latlon)
 
 
-    for i,p in enumerate(ps.index):
-        LAT=ps.iloc[i,:]["LATITUDE"]
-        LON=ps.iloc[i,:]["LONGITUDE"]
-        plt.plot([LON],[LAT],color='red',marker="o",markersize=4)#,transform=crs_latlon)
+    ps=pd.read_excel("/mnt/y/Data/Electricity/RepuTex wind and solar project pipeline_All states_July 2018 v2.xlsx",skiprows=4)
+    ps=ps[ps["State "]=="Victoria "]
+    ps_wind=ps[ps["Type"]=="Wind "]
+    ps_solar=ps[ps["Type"]=="Solar "]
+
+    for i,p in enumerate(ps_solar.index):
+        LAT=ps.iloc[i,:]["Latitude: Tilt"]
+        LON=ps.iloc[i,:]["Longitude"]
+        plt.plot([LON],[LAT],color='yellow',marker="o",markersize=4)#,transform=crs_latlon)
 
     for i,p in enumerate(ps_wind.index):
-        LAT=ps_wind.iloc[i,:]["LATITUDE"]
-        LON=ps_wind.iloc[i,:]["LONGITUDE"]
+        LAT=ps_wind.iloc[i,:]["Latitude: Tilt"]
+        LON=ps_wind.iloc[i,:]["Longitude"]
         plt.plot([LON],[LAT],color='green',marker="o",markersize=4,)#,transform=crs_latlon)
+
 
 
     # SA bounary coordinates
     #ax.set_extent((125, 141, -25, -39), crs=crs_latlon)
-    plt.savefig(base+"WIND.png".format(var,year,month,day,hour,rrp))
+    # Victoria Coordinates
+    ax.set_extent((140,150,-33,-40), crs=crs_latlon)
 
+
+    plt.savefig(base+"era5_VIC_{1}{2:02d}{3:02d}_{4}_RRP_{5}.png".format(var,year,month,day,hour,rrp))
+    plt.close()
+
+    return 0

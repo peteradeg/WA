@@ -30,7 +30,7 @@ def valuefactor(df_delta,state_production,site,price):
 
     return vf
 
-def vf(df_delta,state_production,site,price):
+def vf(df_delta,site,price):
 
     # In this instance Value factor is calculating, the value factor relative to wind famrs at LGA sites.
 
@@ -39,7 +39,7 @@ def vf(df_delta,state_production,site,price):
     # multiply site and price
     mysite=(df_delta[site]*price*.5).sum()/(df_delta[site].sum()*.5)
     # divide by average price
-    valuefactor = mysite/(price.sum())
+    valuefactor = mysite*100/(price.mean())
 
     return valuefactor
 
@@ -73,6 +73,19 @@ def cbn2(G):
         cbn[node]=g_cbn/(len(G[node])*tpower)
 
     nx.set_node_attributes(G,name="CBN2",values=cbn)
+    return G
+
+def cbn3(G):
+
+    cbn={}
+    for node in G.nodes():
+        g_cbn=0
+        for edge in G[node]:
+            g_cbn=g_cbn+G[node][edge]["weight"]
+        cbn[node]=g_cbn
+
+    nx.set_node_attributes(G,name="CBN3",values=cbn)
+
     return G
 
 
@@ -143,7 +156,7 @@ def attributes_two(G,dataframe_matrix,before_dataframe_matrix):
 
     return G,ndelta 
 
-def attributes_one(G,dataframe_matrix,dfr_1,df_state,price):
+def attributes_one(G,dataframe_matrix,dfr_1,price):
 
     nsize_now={}
     for n in G.nodes:
@@ -169,7 +182,8 @@ def attributes_one(G,dataframe_matrix,dfr_1,df_state,price):
 
     nvaluefactor={}
     for n in G.nodes:
-        nvaluefactor[n]=valuefactor(dataframe_matrix,df_state,n,price)
+        #nvaluefactor[n]=vf(dataframe_matrix,df_state,n,price)
+        nvaluefactor[n]=vf(dataframe_matrix,n,price)
     nx.set_node_attributes(G,name="nvaluefactor",values=nvaluefactor)
 
 
@@ -223,18 +237,19 @@ def attributes_color(G):
 
     # #### add in colour relative to VF
 
-    # palette=sns.color_palette("RdBu_r",11)[::-1]
-    # palette=sns.diverging_palette(10,150, n=10)
-    # #palette=palette[:4]+palette[5:]
-    # # Wind
-    # vfbins=np.linspace(80,105,10)
-    # #solar
-    # #vfbins=np.linspace(101,110,10)
+    palette=sns.color_palette("RdBu_r",11)[::-1]
+    palette=sns.diverging_palette(10,150, n=10)
+    #palette=palette[:4]+palette[5:]
+    # Wind
+    #vfbins=np.linspace(80,105,10)
+    vfbins=np.linspace(90,100,10)
+    #solar
+    #vfbins=np.linspace(101,110,10)
 
-    # nsign={}
-    # for n in G.nodes():
-    #     idx=(np.abs(vfbins-nx.get_node_attributes(G,"nvaluefactor")[n])).argmin()
-    #     nsign[n]=palette[idx]
+    nsign={}
+    for n in G.nodes():
+        idx=(np.abs(vfbins-nx.get_node_attributes(G,"nvaluefactor")[n])).argmin()
+        nsign[n]=palette[idx]
 
     #### ADD in colour relative to regions LGA1_3
 
@@ -247,12 +262,12 @@ def attributes_color(G):
     #     nsign[n]=cpalatte[lga_area.loc[n]["LGA2"]]
 
     #read in LGA1_3
-    lga_area=pd.read_csv("/mnt/y/concepts/LGA_area/lga_1_3_complete.csv")
-    lga_area.index=lga_area["LGA3"]
-    cpalatte={"North West":'#d73027',"Central Vic":'#fc8d59',"South West":'#fee090',"Northern Vic":'#e0f3f8',"Gippsland":'#91bfdb'}
-    nsign={}
-    for n in G.nodes:
-        nsign[n]=cpalatte[lga_area.loc[n]["LGA1"]]
+    # lga_area=pd.read_csv("/mnt/y/concepts/LGA_area/lga_1_3_complete.csv")
+    # lga_area.index=lga_area["LGA3"]
+    # cpalatte={"North West":'#d73027',"Central Vic":'#fc8d59',"South West":'#fee090',"Northern Vic":'#e0f3f8',"Gippsland":'#91bfdb'}
+    # nsign={}
+    # for n in G.nodes:
+    #     nsign[n]=cpalatte[lga_area.loc[n]["LGA1"]]
 
     #Colour nodes for tow attributes
     # nsign={}
@@ -306,15 +321,15 @@ def attributes(G):
     G_deg=nx.degree_centrality(G)
     G_degree=nx.degree(G)
     #G_bet=nx.betweenness_centrality(G)
-    #G_eig=nx.eigenvector_centrality_numpy(G)
-    #G_page=nx.pagerank_numpy(G)
+    G_eig=nx.eigenvector_centrality_numpy(G)
+    G_page=nx.pagerank_numpy(G)
     #G_load=nx.load_centrality(G)
-    #G_katz=nx.katz_centrality_numpy(G)
+    G_katz=nx.katz_centrality_numpy(G)
     G_closeness=nx.closeness_centrality(G) # aka node strenght https://arxiv.org/pdf/0803.3884.pdf
     # closeness 
     #print(G_closeness)
-    #Centrality_metric={"Degree_centrality":G_deg,"Betweeness":G_bet,"Eigencentrality":G_eig,"load":G_load,"katz":G_katz,"Pagerank":G_page,"Closeness":G_closeness,"Clustering":G_clustering}
-    Centrality_metric={"Degree_centrality":G_deg,"Clustering":G_clustering}
+    Centrality_metric={"Degree_centrality":G_deg,"Eigencentrality":G_eig,"katz":G_katz,"Pagerank":G_page,"Closeness":G_closeness,"Clustering":G_clustering}
+    #Centrality_metric={"Degree_centrality":G_deg,"Clustering":G_clustering}
     for cent in Centrality_metric:
         nx.set_node_attributes(G,name=cent,values=Centrality_metric[cent])
 
@@ -325,6 +340,7 @@ def attributes(G):
     #CBN1.0 Centrality by node 
     G=cbn1(G)
     G=cbn2(G)
+    G=cbn3(G)
 
         
     #return G,G_page,G_katz,G_closeness
@@ -363,6 +379,19 @@ def makeG(df_size,df_attr,df_state,price,path):
     G=GfromAEMO(df_size)
     G=nx.maximum_spanning_tree(G)
     G=attributes_one(G,df_size.replace([np.inf, -np.inf], np.nan),df_attr,df_state,price)
+    G=attributes(G)
+    G=attributes_color(G)
+    graphout=graph_build_lga(G,path,False)
+    return G
+
+
+def makeG1(df_size,df_attr,price,path):
+    # df_size relates to size of node for example it could be power price
+    # df_attr relates to the power output
+    import numpy as np
+    G=GfromAEMO(df_size)
+    G=nx.maximum_spanning_tree(G)
+    G=attributes_one(G,df_size.replace([np.inf, -np.inf], np.nan),df_attr,price)
     G=attributes(G)
     G=attributes_color(G)
     graphout=graph_build_lga(G,path,False)

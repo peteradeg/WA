@@ -6,6 +6,7 @@ import pptx.util
 import glob
 import scipy.misc
 import os
+import fnmatch
 
 OUTPUT_TAG = "VIC market"
 
@@ -31,7 +32,7 @@ title.text = OUTPUT_TAG
 df_all,price=ancil_load.SA_production_price()
 # Extract top x % of times
 # Needs to be same as that determined from powerdeck/main.ipynb
-fprice=ancil_load.subset_pricefilter(price)
+ftime,fprice=ancil_load.subset_pricefilter(price)
 filtered_times = fprice.index # Filtered_times are used iteratively to consturct powerdeck
 
 # Reading in weather solar/wind, 
@@ -46,52 +47,67 @@ filtered_times = fprice.index # Filtered_times are used iteratively to consturct
 # MST  : B
 
 
+# old verison of python
+#https://stackoverflow.com/questions/2186525/use-a-glob-to-find-files-recursively-in-python
+matches = []
+for root, dirnames, filenames in os.walk('/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme/2017'):
+    for filename in fnmatch.filter(filenames, '*.png'):
+        matches.append(os.path.join(root, filename))
 
 # These are images to put on the page
-imagesTL=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/VIC_LGA/present/season/size_prod_color_VF_time*.png")
-imagesTR=glob.glob("/home/peter/weatheranalytics/presentation/figures/future/VF/corr_prod_color_VF_20*.png")
+#imagesTL=glob.glob("/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme/*")
+imagesTL=matches
+imagesTR=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/EVENTBASED/Victoria_project/CBN1/*")
 # need weather files!
-imagesB=glob.glob("/home/peter/weatheranalytics/presentation/figures/future/")
+imagesB=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/EVENTBASED/Victoria_project/MST/*")
 # Other globs
 
 # layout
 layout={"TITLE":(.05,0.0,.9,.2),"TL":(.05,.1,.4,.4),"TR":(.45,.1,.4,.4),"B":(.05,.6,.9,.4)}
 tiles=["TL","TR","B"]
 
+
+
+
+
+
+
 # change this into loop over timeperiod: with multiple globs that we select from.
-# for i,ftimes in filtered_times:
+for i,ftimes in enumerate(np.array(filtered_times[0:10])):
 
-# pull images from 3 locations such as imagesTL[i], imagesTR[i], imagesB[i]
+    # pull images from 3 locations such as imagesTL[i], imagesTR[i], imagesB[i]
+    # TL = imagesTL[i]
+    # TR = imagesTR[i]
+    # B  = imagesB[i]
+    Tiles={"TL":imagesTL[i],"TR":imagesTR[i],"B":imagesB[i]}
 
-# Then preexisting for t in tiles loop to populate slide. 
-
-# done! 
-
-for g in imagesTL:
-    print(g)
-    g_head=os.path.basename(g)
+    print(ftimes)
     slide = prs.slides.add_slide(prs.slide_layouts[6])
 
     # add title
     tb = slide.shapes.add_textbox(1, 1, 1, 1)
     p = tb.text_frame.add_paragraph()
-    p.text = g_head
-    #p.font.size = pptx.util.Pt(14)
+    p.text = "Victoria top 90 to 95th, time:{0}".format(ftimes)
+        #p.font.size = pptx.util.Pt(14)
 
 
-    # # each tile in the layout
-    # for t in tiles:
+    # each tile in the layout
+    for t in tiles:
 
-    #     pic_left  = int(prs.slide_width * layout[t][0])
-    #     pic_top   = int(prs.slide_height * layout[t][1])
-    #     pic_width = int(prs.slide_width * layout[t][2])
-    #     pic_height = int(prs.slide_height * layout[t][3])
+        pic_left  = int(prs.slide_width * layout[t][0])
+        pic_top   = int(prs.slide_height * layout[t][1])
+        pic_width = int(prs.slide_width * layout[t][2])
+        pic_height = int(prs.slide_height * layout[t][3])
 
-    #     img = scipy.misc.imread(g)
-    #     # specify default height
-    #     #pic_height = int(pic_width * img.shape[0] / img.shape[1])
-    #     #pic   = slide.shapes.add_picture(g, pic_left, pic_top)
-    #     pic   = slide.shapes.add_picture(g, pic_left, pic_top, pic_width, pic_height)
+        #img = scipy.misc.imread(g)
+
+        img = scipy.misc.imread(Tiles[t])
+
+
+        # specify default height
+        #pic_height = int(pic_width * img.shape[0] / img.shape[1])
+        #pic   = slide.shapes.add_picture(g, pic_left, pic_top)
+        pic   = slide.shapes.add_picture(Tiles[t], pic_left, pic_top, pic_width, pic_height)
 
 prs.save("%s.pptx" % OUTPUT_TAG)
 
