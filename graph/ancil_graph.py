@@ -35,7 +35,6 @@ def vf(df_delta,site,price):
     # In this instance Value factor is calculating, the value factor relative to wind famrs at LGA sites.
 
     time_period=df_delta.index
-
     # multiply site and price
     mysite=(df_delta[site]*price*.5).sum()/(df_delta[site].sum()*.5)
     # divide by average price
@@ -89,7 +88,6 @@ def cbn3(G):
     return G
 
 
-
 def GfromAEMO(df_mnt):
     import math
     df=df_mnt.corr() # todo change from corr
@@ -111,6 +109,45 @@ def GfromAEMO(df_mnt):
       except ValueError:
         G[e[0]][e[1]]["weight"]=0
     return G
+
+
+def GfromIntersect(df_all_ancil):
+    import math
+    import numpy as np
+    col = len(df_all_ancil.columns)
+    X=np.zeros((col,col))
+
+    for i_dex,i in enumerate(df_all_ancil.columns):
+        for j_dex,j in enumerate(df_all_ancil.columns):
+            # Intersect i and j
+            a=df_all_ancil[i].dropna()
+            b=df_all_ancil[j].dropna()
+            setij=a.index.intersection(b.index)
+            
+            X[i_dex,j_dex]=np.corrcoef(df_all_ancil[i].loc[setij],df_all_ancil[j].loc[setij])[0,1]
+
+    df=pd.DataFrame(X)
+    df.columns=df_all_ancil.columns
+    df.index=df_all_ancil.columns
+
+    #del df.index.name
+    #del df.columns.name
+
+    mst_links = df.stack().reset_index()
+    mst_links=mst_links.loc[ (abs(mst_links[0]) != 0) & (mst_links['level_0'] != mst_links['level_1'])]
+
+    mst_links=mst_links.rename(columns={0:"weight"})
+    G=nx.from_pandas_edgelist(mst_links, 'level_0', 'level_1',edge_attr="weight")
+
+    for e in G.edges():
+      try:
+        # TODO change from Corr
+        #G[e[0]][e[1]]["weight"]=G[e[0]][e[1]]["weight"]/(abs(mst_links["weight"]).max())
+        #G[e[0]][e[1]]["weight"]=abs(2-math.sqrt(2*(1-G[e[0]][e[1]]["weight"])))
+        G[e[0]][e[1]]["weight_length"]=math.sqrt(2*(1-G[e[0]][e[1]]["weight"]))
+      except ValueError:
+        G[e[0]][e[1]]["weight"]=0
+    return G,df
 
 
 
@@ -237,17 +274,19 @@ def attributes_color(G):
 
     # #### add in colour relative to VF
 
-    palette=sns.color_palette("RdBu_r",11)[::-1]
-    palette=sns.diverging_palette(10,150, n=10)
+    #palette=sns.color_palette("RdBu_r",11)[::-1]
+    palette=sns.diverging_palette(10,150, n=31)
     #palette=palette[:4]+palette[5:]
     # Wind
     #vfbins=np.linspace(80,105,10)
-    vfbins=np.linspace(90,100,10)
+    vfbins=np.linspace(80,120,31)
+    #vfbins=np.linspace(90,100,10)
     #solar
     #vfbins=np.linspace(101,110,10)
 
     nsign={}
     for n in G.nodes():
+        print(n)
         idx=(np.abs(vfbins-nx.get_node_attributes(G,"nvaluefactor")[n])).argmin()
         nsign[n]=palette[idx]
 
@@ -279,7 +318,7 @@ def attributes_color(G):
 
     nx.set_edge_attributes(G,name="esign",values=esign)
     nx.set_node_attributes(G,name="nsign",values=nsign)
-    return G
+    return G,palette,vfbins
 
 def attributes_DUID(G,DUID):
 
@@ -338,12 +377,25 @@ def attributes(G):
 
    
     #CBN1.0 Centrality by node 
-    G=cbn1(G)
     G=cbn2(G)
     G=cbn3(G)
 
         
     #return G,G_page,G_katz,G_closeness
+    return G
+
+
+def attributescbs(G,df_all):
+    # correlation by state
+    import numpy as np
+
+    cbn={}
+    for node in G.nodes():
+        g_cbn=0
+        cbn[node]=np.corrcoef(df_all.sum(axis=1),df_all[node])[0,1]
+
+    nx.set_node_attributes(G,name="CBS",values=cbn)
+
     return G
 
 
@@ -385,16 +437,42 @@ def makeG(df_size,df_attr,df_state,price,path):
     return G
 
 
-def makeG1(df_size,df_attr,price,path):
+def makeG1(df_size,df_attr,price,path,state="VIC"):
     # df_size relates to size of node for example it could be power price
     # df_attr relates to the power output
     import numpy as np
-    G=GfromAEMO(df_size)
+    if state=="VIC":
+        G=GfromAEMO(df_size)
+    elif state=="SA":
+        G,X=GfromIntersect(df_size)
+    else:
+        G=0
+    G=cbn1(G)
+    G=attributescbs(G,df_size)
     G=nx.maximum_spanning_tree(G)
     G=attributes_one(G,df_size.replace([np.inf, -np.inf], np.nan),df_attr,price)
     G=attributes(G)
-    G=attributes_color(G)
-    graphout=graph_build_lga(G,path,False)
+    G,palette,vfbins=attributes_color(G)
+    graphout=graph_build_lga(G,path,palette,vfbins,False)
+    return G
+
+def makeG_bokeh(df_size,df_attr,price,path,state="VIC"):
+    # df_size relates to size of node for example it could be power price
+    # df_attr relates to the power output
+    import numpy as np
+    if state=="VIC":
+        G=GfromAEMO(df_size)
+    elif state=="SA":
+        G,X=GfromIntersect(df_size)
+    else:
+        G=0
+    G=cbn1(G)
+    G=attributescbs(G,df_size)
+    G=nx.maximum_spanning_tree(G)
+    G=attributes_one(G,df_size.replace([np.inf, -np.inf], np.nan),df_attr,price)
+    G=attributes(G)
+    #G,palette,vfbins=attributes_color(G)
+    #graphout=graph_build_lga(G,path,palette,vfbins,False)
     return G
 
 
@@ -454,11 +532,12 @@ def graph_build(G,sname_base,labels):
     f.savefig(sname)
     return ecolor,ncolor,nlabels,elabels,nsize
 
-def graph_build_lga(G,sname_base,labels=False):
+def graph_build_lga(G,sname_base,palette,vfbins,labels=False,):
     # Build your graph
     import matplotlib.pyplot as plt
     import numpy as np
     from decimal import Decimal
+    from matplotlib.colors import ListedColormap
     
     # Plot the network:
     f=plt.figure(figsize=(20,10))
@@ -512,13 +591,18 @@ def graph_build_lga(G,sname_base,labels=False):
     amn=upper.min()
     nsize[nsize>.8*nsize.max()]=(upper-amn)*1000/(amx-amn)+np.sort(upper)[0]
     
-    nx.draw(G, pos, edges=edges,font_size=12,node_size=nsize,labels=nlabels,edge_color=ecolor,node_color=ncolor)
-    print("hi")
+    nx.draw(G, pos, edges=edges,font_size=12,node_size=nsize,labels=nlabels,edge_color=ecolor,node_color=ncolor,font_color="black",with_labels=True)#"#ff995e"
+    f.set_facecolor("white")
+    # Adding in legends
+    sm = plt.cm.ScalarMappable(cmap=ListedColormap(palette))
+    sm._A = vfbins
+    plt.colorbar(sm)
+
     #nx.draw_networkx_edge_labels(G, pos, edge_labels=elabels)
     plt.legend(numpoints = 1)
  
 
-    f.savefig(sname)
+    f.savefig(sname,facecolor=f.get_facecolor(), edgecolor='none')
     return ecolor,ncolor,nlabels,elabels,nsize
 
 

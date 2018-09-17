@@ -7,8 +7,11 @@ import glob
 import scipy.misc
 import os
 import fnmatch
+import ancil_load
+import numpy as np
 
-OUTPUT_TAG = "VIC market"
+
+OUTPUT_TAG = "VIC market 98"
 
 # new
 prs = pptx.Presentation()
@@ -29,12 +32,17 @@ title = slide.shapes.title
 title.text = OUTPUT_TAG
 
 # SA price and production
-df_all,price=ancil_load.SA_production_price()
+#df_all,price=ancil_load.SA_production_price()
+
+# For victoria
+df_all,price=ancil_load.VIC_lilly_production_price()
+price=price.iloc[1:]
+
 # Extract top x % of times
 # Needs to be same as that determined from powerdeck/main.ipynb
 ftime,fprice=ancil_load.subset_pricefilter(price)
 filtered_times = fprice.index # Filtered_times are used iteratively to consturct powerdeck
-
+filtered_times = filtered_times[filtered_times.year==2017]
 # Reading in weather solar/wind, 
 # use cartopyEarth(date) -> image out soalr and MST
 
@@ -50,23 +58,30 @@ filtered_times = fprice.index # Filtered_times are used iteratively to consturct
 # old verison of python
 #https://stackoverflow.com/questions/2186525/use-a-glob-to-find-files-recursively-in-python
 matches = []
-for root, dirnames, filenames in os.walk('/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme/2017'):
+for root, dirnames, filenames in os.walk('/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme98/2017'):
     for filename in fnmatch.filter(filenames, '*.png'):
         matches.append(os.path.join(root, filename))
 
 # These are images to put on the page
 #imagesTL=glob.glob("/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme/*")
 imagesTL=matches
-imagesTR=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/EVENTBASED/Victoria_project/CBN2/*")
+imagesTR=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/EVENTBASED/Victoria_project98/CBN1/*")
 # need weather files!
-imagesBL=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/EVENTBASED/Victoria_project/MST/*")
+imagesBL=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/EVENTBASED/Victoria_project98/MST/*")
 # Other globs
-imagesBR=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/EVENTBASED/Victoria_project/CBN3/*")
+imagesBR=glob.glob("/mnt/y/Code/Analysis/graph/Graph_figures/EVENTBASED/Victoria_project98/PCA1/*")
 
 
 # layout
+# Three Quad
 #layout={"TITLE":(.05,0.0,.9,.2),"TL":(.05,.1,.4,.4),"TR":(.45,.1,.4,.4),"B":(.05,.6,.9,.4)}
+
+# Four Quad WORKING
 layout = {"TITLE":(.05,0.0,.9,.2),"TL":(.05,.1,.4,.4),"TR":(.45,.1,.4,.4),"BL":(.05,.6,.4,.4),"BR":(.45,.6,.4,.4)}
+# Four Quad TEST
+#layout = {"TITLE":(0.0,0.0,.7,.2),"TL":(0.0,.1,.5,.45),"TR":(.5,.1,.4,.45),"BL":(0.0,.55,.5,.45),"BR":(.5,.55,.5,.45)}
+
+
 tiles=["TL","TR","BL","BR"]
 
 
@@ -76,7 +91,7 @@ tiles=["TL","TR","BL","BR"]
 
 
 # change this into loop over timeperiod: with multiple globs that we select from.
-for i,ftimes in enumerate(np.array(filtered_times[0:10])):
+for i,ftimes in enumerate(np.array(filtered_times)):
 
     # pull images from 3 locations such as imagesTL[i], imagesTR[i], imagesB[i]
     # TL = imagesTL[i]
@@ -90,7 +105,7 @@ for i,ftimes in enumerate(np.array(filtered_times[0:10])):
     # add title
     tb = slide.shapes.add_textbox(1, 1, 1, 1)
     p = tb.text_frame.add_paragraph()
-    p.text = "Time:{0}, Price".format(ftimes,fprice[i])
+    p.text = "Time:{0}, Price {1} $/MWh".format(ftimes,fprice[i])
         #p.font.size = pptx.util.Pt(14)
 
 

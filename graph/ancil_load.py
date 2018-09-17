@@ -62,24 +62,7 @@ def demand_info(tstart,filebase):
 
     return SA1,SA2,tstart,filename1,filename2
 
-def subset_pricefilter(price):
 
-
-    import numpy as np
-    
-    price=price.iloc[1::2]
-    price  = price.dropna()
-
-    p1 = np.percentile(price.dropna(),99)
-    p2 = np.percentile(price.dropna(),100)
-
-    price1 = price[price>p1]
-    price  = price1[price1<p2]
-
-    import datetime as dt
-    price=price.loc[dt.datetime(2016,1,1):dt.datetime(2018,1,1)]
-
-    return price
 
 def subset(df_mnt_prev,df_mnt,Gen_info,state):
     # Subsets output of trading info . E.G Looking at South Australia
@@ -127,6 +110,7 @@ def gen_df(filebase,state):
 
 
 def SA_production_price():
+
     Gen_info=pd.read_excel("/mnt/y/Code/Dev/graph/MacBank/NEM Registration and Exemption List.xls",sheet_name="Generators and Scheduled Loads")
     # Read Trading prices info
     df_all=pd.read_csv("/mnt/y/Code/Analysis/graph/df_all_PUBLIC_DVD_TRADING_PRICE.csv",index_col="SETTLEMENTDATE")
@@ -138,7 +122,7 @@ def SA_production_price():
     Gen_info_wind=Gen_info[Gen_info["Fuel Source - Primary"]=="Wind"]
     intersect=list(set(df_all.columns) & set(Gen_info_wind.loc[:,"DUID"]))
     price=df_all.loc[:,"SA"]
-    price=price.dropna()
+    #price=price.dropna()
     df_all=df_all[intersect]
 
     return df_all,price
@@ -162,9 +146,10 @@ def VIC_lilly_production_price():
 def subset_pricefilter(price):
 
     import numpy as np
+    price  = price.dropna()
 
-    p1 = np.percentile(np.array(price), 90) # return 50th percentile, e.g median.
-    p2 = np.percentile(np.array(price), 95) # return 50th percentile, e.g median.
+    p1 = np.percentile(np.array(price), 98) # return 50th percentile, e.g median.
+    p2 = np.percentile(np.array(price), 100) # return 50th percentile, e.g median.
 
     price=price[price>p1]
     price=price[price<p2]
@@ -300,7 +285,7 @@ def munge_MST(tstart,tstart2,df_all,price,out):
 
     df_delta = df_all.loc[tstart:tstart2]
     df_revenue=df_delta.mul(price.loc[df_delta.index],axis=0)
-    G=ancil_graph.makeG1(df_delta,df_revenue,price.loc[df_delta.index],out)
+    G=ancil_graph.makeG1(df_delta,df_revenue,price.loc[df_delta.index],out,"SA")
 
     return df_delta,df_revenue,G
 
@@ -324,6 +309,7 @@ def munge_analytics_MST(G,tstart):
         df_ind["CBN1"]=pd.Series(nx.get_node_attributes(G,"CBN1")[g])
         df_ind["CBN2"]=pd.Series(nx.get_node_attributes(G,"CBN2")[g])
         df_ind["CBN3"]=pd.Series(nx.get_node_attributes(G,"CBN3")[g])
+        df_ind["CBS"]=pd.Series(nx.get_node_attributes(G,"CBS")[g])
         df_ind["time"]=tstart
         #print(df_ind)
         df_central=df_central.append(df_ind)
@@ -539,7 +525,7 @@ def Cartopy_Earth_wind(tm,var,rrp,basefn):
 
 
     crs_latlon=ccrs.PlateCarree()
-    plt.figure(figsize=(13,6.2))
+    plt.figure(figsize=(10,9))
 
     ax = plt.subplot(111, projection=crs_latlon)
 
@@ -554,7 +540,7 @@ def Cartopy_Earth_wind(tm,var,rrp,basefn):
 
         #ax.quiver(lon,lat,u,v,transform=crs_latlon, headwidth=1, scale =1.0 headlength=4)
     skip=(slice(None,None,5),slice(None,None,5))
-    ax.quiver(lon[::5],lat[::5],u[skip],v[skip],color="pink",transform=crs_latlon, headwidth=2, headlength=3)
+    ax.quiver(lon[::5],lat[::5],u[skip],v[skip],color="black",transform=crs_latlon, headwidth=2, headlength=3)
 
 
 
@@ -610,7 +596,7 @@ def Cartopy_Earth_VIC(tm,var,rrp,basefn):
     tind = (day-1)*24+hour
     basefn=basefn.format(year,month)
 
-    base = "/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme/{0}/{1:02d}/".format(year,month)
+    base = "/mnt/y/Data/Weather/ECMWF/Saved_plots/wind_temp/Victoria_extreme98_update/{0}/{1:02d}/".format(year,month)
     mkdir_p(base)
 
     flf = Dataset(basefn)
@@ -638,7 +624,7 @@ def Cartopy_Earth_VIC(tm,var,rrp,basefn):
 
         #ax.quiver(lon,lat,u,v,transform=crs_latlon, headwidth=1, scale =1.0 headlength=4)
     skip=(slice(None,None,8),slice(None,None,8))
-    q=ax.quiver(lon[::8],lat[::8],u[skip],v[skip],color="pink",transform=crs_latlon, headwidth=20, headlength=10)
+    q=ax.quiver(lon[::8],lat[::8],u[skip],v[skip],color="black",transform=crs_latlon, headwidth=20, headlength=10)
     ax.quiverkey(q,X=.3,Y=1.1,U=10,label="Length = 10 ms-1",labelpos='E')
 
 
